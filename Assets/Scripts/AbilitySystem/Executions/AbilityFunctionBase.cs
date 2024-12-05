@@ -1,11 +1,9 @@
 using UnityEngine;
 
-public abstract class AbilityFunctionBase : ScriptableObject, IAbilityFunction
+public abstract class AbilityFunctionBase : ScriptableObject
 {
-    public abstract Monad<AbilityRuntimeContext> Execute(Monad<AbilityRuntimeContext> runtimeContext);
+    // Common properties and methods shared by all steps
+    public string Name => name;
 
-    public virtual string Validate()
-    {
-        return string.Empty; // Default: No validation errors
-    }
+    public abstract string Validate();
 }

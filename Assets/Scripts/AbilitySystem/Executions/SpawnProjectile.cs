@@ -1,12 +1,12 @@
 using UnityEngine;
 
-public class SpawnProjectile : AbilityFunctionBase
+public class SpawnProjectile : AbilityFunctionBase, IExecution
 {
     public GameObject ProjectilePrefab;
     public float Speed;
     public float Lifetime;
 
-    public override Monad<AbilityRuntimeContext> Execute(Monad<AbilityRuntimeContext> runtimeContext)
+    public Monad<AbilityRuntimeContext> Execute(Monad<AbilityRuntimeContext> runtimeContext)
     {
         if (ProjectilePrefab != null)
         {

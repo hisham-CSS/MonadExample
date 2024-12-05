@@ -1,61 +1,70 @@
-using static UnityEngine.GraphicsBuffer;
-using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
 [CustomEditor(typeof(AbilityContext))]
 public class AbilityContextEditor : Editor
 {
-    private string validationMessage = string.Empty;
     private SerializedProperty executionStepsProperty;
+    private SerializedProperty postExecutionStepsProperty;
+    private string validationMessage = string.Empty;
 
     private void OnEnable()
     {
         executionStepsProperty = serializedObject.FindProperty("ExecutionSteps");
-
-        // Force the AbilityName to match the ScriptableObject name
-        UpdateAbilityName();
+        postExecutionStepsProperty = serializedObject.FindProperty("PostExecutionSteps");
+        UpdateAbilityName(); // Ensure AbilityName matches ScriptableObject name
     }
 
     public override void OnInspectorGUI()
     {
-        // Update serialized object
         serializedObject.Update();
 
+        // Display ability name
+        DisplayAbilityName();
+
+        // Display and manage Execution Steps
+        DisplayStepList<IExecution>(executionStepsProperty, "Execution Steps");
+
+        // Display and manage Post Execution Steps
+        DisplayStepList<IPostExecution>(postExecutionStepsProperty, "Post Execution Steps");
+
+        // Validate ability configuration
+        DisplayValidationMessage();
+
+        serializedObject.ApplyModifiedProperties();
+    }
+
+    private void DisplayAbilityName()
+    {
         AbilityContext context = (AbilityContext)target;
 
-        // Force the AbilityName to match the ScriptableObject name
-        UpdateAbilityName();
-
-        // Display the read-only Ability Name
-        EditorGUILayout.LabelField("Ability Name", context.AbilityName);
-
-        EditorGUILayout.Space();
-        EditorGUILayout.LabelField("Execution Steps", EditorStyles.boldLabel);
-
-        if (context.ExecutionSteps == null)
+        if (context.AbilityName != context.name)
         {
-            context.ExecutionSteps = new List<AbilityFunctionBase>();
+            UpdateAbilityName();
         }
 
-        // Display and edit execution steps
-        for (int i = 0; i < executionStepsProperty.arraySize; i++)
-        {
-            var stepProperty = executionStepsProperty.GetArrayElementAtIndex(i);
+        EditorGUILayout.LabelField("Ability Name", context.AbilityName);
+        EditorGUILayout.Space();
+    }
 
-            if (stepProperty.objectReferenceValue == null)
-            {
-                continue;
-            }
+    private void DisplayStepList<T>(SerializedProperty property, string label) where T : class
+    {
+        EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
+
+        for (int i = property.arraySize - 1; i >= 0; i--) // Iterate backward
+        {
+            var stepProperty = property.GetArrayElementAtIndex(i);
+
+            if (stepProperty.objectReferenceValue == null) continue;
 
             EditorGUILayout.BeginVertical("box");
-            SerializedObject stepSerializedObject = new SerializedObject(stepProperty.objectReferenceValue);
 
+            SerializedObject stepSerializedObject = new SerializedObject(stepProperty.objectReferenceValue);
             EditorGUILayout.LabelField($"Step {i + 1}: {stepProperty.objectReferenceValue.GetType().Name}", EditorStyles.boldLabel);
 
+            // Display editable fields for the step
             var iterator = stepSerializedObject.GetIterator();
-            iterator.NextVisible(true); // Skip generic "Object" fields
-
+            iterator.NextVisible(true); // Skip "Object" fields
             while (iterator.NextVisible(false))
             {
                 EditorGUILayout.PropertyField(iterator, true);
@@ -63,73 +72,88 @@ public class AbilityContextEditor : Editor
 
             stepSerializedObject.ApplyModifiedProperties();
 
-            // Remove step button
+            // Remove button
             if (GUILayout.Button("Remove Step"))
             {
-                var step = stepProperty.objectReferenceValue as ScriptableObject;
-                if (step != null && AssetDatabase.Contains(step))
-                {
-                    AssetDatabase.RemoveObjectFromAsset(step);
-                    DestroyImmediate(step, true);
-                }
-                executionStepsProperty.DeleteArrayElementAtIndex(i);
-                break;
+                RemoveStep(property, i);
             }
 
             EditorGUILayout.EndVertical();
         }
 
-        // Add new execution step button
-        if (GUILayout.Button("Add Execution Step"))
+        if (GUILayout.Button($"Add {label}"))
         {
-            GenericMenu menu = new GenericMenu();
-
-            foreach (var type in AbilityFunctionRegistry.GetAllAbilityFunctions())
-            {
-                menu.AddItem(new GUIContent(type.Name), false, () =>
-                {
-                    // Create a new instance of the selected execution step type
-                    var newFunction = ScriptableObject.CreateInstance(type) as AbilityFunctionBase;
-
-                    if (newFunction != null)
-                    {
-                        // Add the new function to the AbilityContext asset
-                        AssetDatabase.AddObjectToAsset(newFunction, target);
-                        AssetDatabase.SaveAssets();
-
-                        // Update the SerializedProperty array
-                        executionStepsProperty.arraySize++;
-                        executionStepsProperty.GetArrayElementAtIndex(executionStepsProperty.arraySize - 1).objectReferenceValue = newFunction;
-
-                        // Apply changes to the serialized object
-                        serializedObject.ApplyModifiedProperties();
-
-                        // Refresh the Inspector to display the new step
-                        EditorUtility.SetDirty(target);
-                        AssetDatabase.SaveAssets();
-                        AssetDatabase.Refresh();
-                    }
-                    else
-                    {
-                        Debug.LogError($"Failed to create instance of {type.Name}");
-                    }
-                });
-            }
-
-            menu.ShowAsContext();
+            ShowAddStepMenu<T>(property);
         }
 
-        serializedObject.ApplyModifiedProperties();
+        EditorGUILayout.Space();
+    }
 
-        // Run validation
+    private void DisplayStepDetails(SerializedProperty stepProperty, int index)
+    {
+        SerializedObject stepSerializedObject = new SerializedObject(stepProperty.objectReferenceValue);
+
+        EditorGUILayout.LabelField($"Step {index + 1}: {stepProperty.objectReferenceValue.GetType().Name}", EditorStyles.boldLabel);
+
+        var iterator = stepSerializedObject.GetIterator();
+        iterator.NextVisible(true); // Skip "Object" fields
+
+        while (iterator.NextVisible(false))
+        {
+            EditorGUILayout.PropertyField(iterator, true);
+        }
+
+        stepSerializedObject.ApplyModifiedProperties();
+
+        if (GUILayout.Button("Remove Step"))
+        {
+            RemoveStep(stepProperty, index);
+        }
+    }
+
+    private void ShowAddStepMenu<T>(SerializedProperty property) where T : class
+    {
+        GenericMenu menu = new GenericMenu();
+
+        foreach (var type in AbilityFunctionRegistry.GetAllAbilityFunctions<T>())
+        {
+            menu.AddItem(new GUIContent(type.Name), false, () =>
+            {
+                var newStep = CreateInstance(type) as AbilityFunctionBase;
+                if (newStep == null) return;
+
+                AssetDatabase.AddObjectToAsset(newStep, target);
+                property.arraySize++;
+                property.GetArrayElementAtIndex(property.arraySize - 1).objectReferenceValue = newStep;
+
+                UpdateInspector();
+            });
+        }
+
+        menu.ShowAsContext();
+    }
+
+    private void RemoveStep(SerializedProperty stepProperty, int index)
+    {
+        var step = stepProperty.GetArrayElementAtIndex(index).objectReferenceValue as ScriptableObject;
+        if (step != null)
+        {   
+            AssetDatabase.RemoveObjectFromAsset(step);
+            DestroyImmediate(step, true);
+        }
+
+        stepProperty.DeleteArrayElementAtIndex(index);
+        UpdateInspector();
+    }
+
+    private void DisplayValidationMessage()
+    {
+        AbilityContext context = (AbilityContext)target;
         validationMessage = context.Validate();
 
-        EditorGUILayout.Space();
-
-        // Display validation messages
         if (!string.IsNullOrEmpty(validationMessage))
         {
-            EditorGUILayout.HelpBox($"Validation Error: {validationMessage}", MessageType.Error);
+            EditorGUILayout.HelpBox(validationMessage, MessageType.Error);
         }
     }
 
@@ -137,11 +161,19 @@ public class AbilityContextEditor : Editor
     {
         AbilityContext context = (AbilityContext)target;
 
-        // Set the AbilityName to match the ScriptableObject name
         if (context.AbilityName != context.name)
         {
             context.AbilityName = context.name;
-            EditorUtility.SetDirty(context); // Mark the object as dirty to save changes
+            UpdateInspector();
         }
+    }
+
+    //ensure inspector updates properly
+    private void UpdateInspector()
+    {
+        serializedObject.ApplyModifiedProperties();
+        EditorUtility.SetDirty(target);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
     }
 }

@@ -1,10 +1,10 @@
 using UnityEngine;
 
-public class CheckMana : AbilityFunctionBase
+public class CheckMana : AbilityFunctionBase, IExecution
 {
     public float RequiredMana;
 
-    public override Monad<AbilityRuntimeContext> Execute(Monad<AbilityRuntimeContext> runtimeContext)
+    public Monad<AbilityRuntimeContext> Execute(Monad<AbilityRuntimeContext> runtimeContext)
     {
         var context = runtimeContext.Value;
 

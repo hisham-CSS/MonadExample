@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 [CreateAssetMenu(fileName = "NewAbilityContext", menuName = "Abilities/Ability Context")]
@@ -10,6 +11,9 @@ public class AbilityContext : ScriptableObject
     [SerializeReference]
     public List<AbilityFunctionBase> ExecutionSteps = new List<AbilityFunctionBase>();
 
+    [SerializeReference]
+    public List<AbilityFunctionBase> PostExecutionSteps = new List<AbilityFunctionBase>();
+
     private void OnValidate()
     {
         // Automatically set AbilityName to the name of the ScriptableObject
@@ -18,20 +22,38 @@ public class AbilityContext : ScriptableObject
 
     public string Validate()
     {
+        string errorMsg = string.Empty;
         if (string.IsNullOrWhiteSpace(AbilityName))
-            return "Ability Name cannot be empty.";
+            errorMsg = "Ability Name cannot be empty. ";
 
         for (int i = 0; i < ExecutionSteps.Count; i++)
         {
             var step = ExecutionSteps[i];
             if (step == null)
-                return $"Step {i + 1} is null.";
+            {
+                errorMsg += $"Execution Step {i + 1} is null. ";
+                break;
+            }
 
             string error = step.Validate();
             if (!string.IsNullOrEmpty(error))
-                return $"Step {i + 1}: {error}";
+                errorMsg += $"Execution Step {i + 1}: {error} ";
         }
 
-        return string.Empty; // No errors
+        for (int i = 0; i < PostExecutionSteps.Count; i++)
+        {
+            var step = PostExecutionSteps[i];
+            if (step == null)
+            {
+                errorMsg += $"Post Execution Step {i + 1} is null. ";
+                break;
+            }
+
+            string error = step.Validate();
+            if (!string.IsNullOrEmpty(error))
+                errorMsg += $"Post Execution Step {i + 1}: {error}";
+        }
+
+        return errorMsg; // No errors
     }
 }
